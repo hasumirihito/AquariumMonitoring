@@ -3,23 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 
-void main() {
-   runApp(MyApp());
-}
-
-class MyApp extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      title: '水温モニター',
-      theme: ThemeData(
-        primarySwatch: Colors.blue,
-      ),
-      home: TemperatureDisplay(),
-    );
-  }
-}
-
 class TemperatureDisplay extends StatefulWidget {
   @override
   _TemperatureDisplayState createState() => _TemperatureDisplayState();
@@ -34,6 +17,7 @@ class _TemperatureDisplayState extends State<TemperatureDisplay> {
   void initState() {
     super.initState();
     fetchLatestData();
+    // 6分ごとにデータを更新
     timer = Timer.periodic(Duration(minutes: 6), (Timer t) => fetchLatestData());
   }
 
@@ -60,56 +44,38 @@ class _TemperatureDisplayState extends State<TemperatureDisplay> {
       }
     } catch (e) {
       print('Error fetching latest data: $e');
+      // エラー時のUI更新やユーザーへの通知を行う
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    // 画面サイズを取得
-    final screenSize = MediaQuery.of(context).size;
-
     return Scaffold(
       appBar: AppBar(
-        title: Text('水温モニター'),
+        title: Text('Aquarium Temperature Monitor'),
       ),
-      body: Container(
-        width: screenSize.width * 0.3,
-        // height: screenSize.height,
-        padding: EdgeInsets.all(20),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            Container(
-              width: screenSize.width * 0.3,  // 画面幅の30%
-              padding: EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: Colors.blue.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Column(
+      body: Center(
+        child: latestTemperature == null
+            ? CircularProgressIndicator()
+            : Column(
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Text(
                     '最新の水温',
-                    style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
+                    style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
                   ),
-                  SizedBox(height: 30),
-                  latestTemperature == null
-                      ? CircularProgressIndicator()
-                      : Text(
-                          '${latestTemperature?.toStringAsFixed(1)}°C',
-                          style: TextStyle(fontSize: 72, fontWeight: FontWeight.bold, color: Colors.blue),
-                        ),
-                  SizedBox(height: 30),
+                  SizedBox(height: 20),
+                  Text(
+                    '${latestTemperature?.toStringAsFixed(1)}°C',
+                    style: TextStyle(fontSize: 48, fontWeight: FontWeight.bold),
+                  ),
+                  SizedBox(height: 20),
                   Text(
                     '最終更新: $lastUpdated',
-                    style: TextStyle(fontSize: 18),
+                    style: TextStyle(fontSize: 16),
                   ),
                 ],
               ),
-            ),
-          ],
-        ),
       ),
     );
   }
