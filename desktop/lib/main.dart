@@ -73,15 +73,15 @@ class _TemperatureDisplayState extends State<TemperatureDisplay> {
         title: Text('水温モニター'),
       ),
       body: Container(
-        width: screenSize.width * 0.3,
-        // height: screenSize.height,
+        width: screenSize.width,
+        height: screenSize.height,
         padding: EdgeInsets.all(20),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             Container(
-              width: screenSize.width * 0.3,  // 画面幅の30%
+              width: screenSize.width * 0.8,  // 画面幅の30%
               padding: EdgeInsets.all(20),
               decoration: BoxDecoration(
                 color: Colors.blue.withOpacity(0.1),

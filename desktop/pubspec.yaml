@@ -19,8 +19,6 @@ dependencies:
   # 国際化とローカリゼーション用パッケージを追加
   intl: ^0.18.0
 
-  # 以下は必要に応じて追加のパッケージを記述
-
 dev_dependencies:
   flutter_test:
     sdk: flutter
