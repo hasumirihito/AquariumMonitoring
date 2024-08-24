@@ -4,6 +4,8 @@ import logging
 import os
 import sqlite3
 from datetime import datetime
+import time
+import seeed_dht
  
 # SENSOR_ID = "28-0267b00a6461"
 ERR_VAL = 85000
@@ -104,6 +106,11 @@ def create_table(conn):
                      (id INTEGER PRIMARY KEY AUTOINCREMENT,
                       temperature REAL NOT NULL,
                       timestamp TEXT NOT NULL)''')
+        c.execute('''CREATE TABLE IF NOT EXISTS environmental_data
+                     (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                      temperature REAL NOT NULL,
+                      humidity REAL NOT NULL,
+                      timestamp TEXT NOT NULL)''')
     except sqlite3.Error as e:
         logger.error(f"テーブル作成エラー: {e}")
 
@@ -114,6 +121,16 @@ def insert_temperature(conn, temperature):
     cur = conn.cursor()
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     cur.execute(sql, (temperature, timestamp))
+    conn.commit()
+    return cur.lastrowid
+
+def insert_environmental_data(conn, temp, humi):
+    """温度・湿度データを挿入する"""
+    sql = ''' INSERT INTO environmental_data(temperature,humidity,timestamp)
+              VALUES(?,?,?) '''
+    cur = conn.cursor()
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    cur.execute(sql, (temp, humi, timestamp))
     conn.commit()
     return cur.lastrowid
 
@@ -148,12 +165,19 @@ def main():
             conn.close()
             sys.exit(1)
         
+        sensor = seeed_dht.DHT("22", 12)
+
+        humi, temp = sensor.read()
+
         temp_val = round(float(temp_val[-1]) / 1000, 1)
         logger.info(f"水温: {temp_val}°C({SENSOR_ID})")
+        logger.info(f"温度: {temp:.2f}°C, 湿度: {humi:.2f}% (type: {sensor.dht_type}, pin: {sensor.pin.pin})")
 
         # データベースに水温を挿入
         inserted_id = insert_temperature(conn, temp_val)
-        logger.debug(f"INSERT DATA : {inserted_id}")
+        logger.debug(f"INSERT temperature : {inserted_id}")
+        inserted_enviroment_id = insert_environmental_data(conn, temp, humi)
+        logger.debug(f"INSERT environmental_data : {inserted_enviroment_id}")
 
     else:
         logger.error("水温を読み取れませんでした。")
