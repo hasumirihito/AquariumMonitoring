@@ -1,5 +1,6 @@
 from flask import Flask, request, jsonify, has_request_context
 from flask_restful import Api, Resource
+from flask_cors import CORS
 import sqlite3
 from datetime import datetime
 import logging
@@ -7,6 +8,7 @@ from logging.handlers import TimedRotatingFileHandler
 import os
 
 app = Flask(__name__)
+CORS(app)
 api = Api(app)
 
 DB_PATH = '/var/lib/aquarium_monitoring/aquarium.db'

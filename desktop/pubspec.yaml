@@ -14,7 +14,10 @@ dependencies:
   http: ^1.1.0
   
   # グラフ描画用パッケージ（最新の安定版に更新）
-  fl_chart: ^0.63.0
+  fl_chart: ^0.69.0
+
+  # windowサイズ
+  desktop_window: ^0.4.0
 
   # 国際化とローカリゼーション用パッケージを追加
   intl: ^0.18.0
