@@ -84,15 +84,16 @@ class _TemperatureDashboardState extends State<TemperatureDashboard> {
   List<Map<String, dynamic>> temperatureHistory = [];
   Timer? timer;
   Size? windowSize;
+  DateTime selectedDate = DateTime.now();
 
   @override
   void initState() {
     super.initState();
     fetchLatestData();
-    fetchTemperatureHistory();
+    fetchTemperatureHistory(); // 引数を削除
     timer = Timer.periodic(Duration(minutes: 6), (Timer t) {
       fetchLatestData();
-      fetchTemperatureHistory();
+      fetchTemperatureHistory(); // 引数を削除
     });
     _getWindowSize();
   }
@@ -148,19 +149,43 @@ class _TemperatureDashboardState extends State<TemperatureDashboard> {
 
   Future<void> fetchTemperatureHistory() async {
     try {
+      final startDate =
+          DateTime(selectedDate.year, selectedDate.month, selectedDate.day);
+      final endDate = startDate.add(Duration(days: 1));
+      final formattedStartDate =
+          DateFormat('yyyy-MM-dd HH:mm:ss').format(startDate);
+      final formattedEndDate =
+          DateFormat('yyyy-MM-dd HH:mm:ss').format(endDate);
+
       final response = await http.get(
-          Uri.parse('http://192.168.10.19:5000/water_temperature?limit=144'));
+        Uri.parse(
+            'http://192.168.10.19:5000/water_temperature?start_date=$formattedStartDate&end_date=$formattedEndDate'),
+      );
       if (response.statusCode == 200) {
         final List<dynamic> jsonData = json.decode(response.body);
         setState(() {
-          temperatureHistory =
-              List<Map<String, dynamic>>.from(jsonData.reversed);
+          temperatureHistory = List<Map<String, dynamic>>.from(jsonData);
         });
       } else {
         throw Exception('Failed to load temperature history');
       }
     } catch (e) {
       print('Error fetching temperature history: $e');
+    }
+  }
+
+  void _selectDate(BuildContext context) async {
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: selectedDate,
+      firstDate: DateTime(2023),
+      lastDate: DateTime.now(),
+    );
+    if (picked != null && picked != selectedDate) {
+      setState(() {
+        selectedDate = picked;
+      });
+      fetchTemperatureHistory(); // 引数を削除
     }
   }
 
@@ -282,11 +307,48 @@ class _TemperatureDashboardState extends State<TemperatureDashboard> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('24時間の温度推移',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('24時間の温度推移',
+                    style:
+                        TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                Row(
+                  children: [
+                    IconButton(
+                      icon: Icon(Icons.arrow_back),
+                      onPressed: () {
+                        setState(() {
+                          selectedDate =
+                              selectedDate.subtract(Duration(days: 1));
+                        });
+                        fetchTemperatureHistory();
+                      },
+                    ),
+                    TextButton(
+                      child:
+                          Text(DateFormat('yyyy/MM/dd').format(selectedDate)),
+                      onPressed: () => _selectDate(context),
+                    ),
+                    IconButton(
+                      icon: Icon(Icons.arrow_forward),
+                      onPressed: selectedDate.day == DateTime.now().day
+                          ? null
+                          : () {
+                              setState(() {
+                                selectedDate =
+                                    selectedDate.add(Duration(days: 1));
+                              });
+                              fetchTemperatureHistory();
+                            },
+                    ),
+                  ],
+                ),
+              ],
+            ),
             SizedBox(height: 10),
             Container(
-              height: 400,
+              height: 450,
               child: temperatureHistory.isEmpty
                   ? Center(child: CircularProgressIndicator())
                   : _buildLineChart(),
