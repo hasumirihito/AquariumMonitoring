@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
@@ -10,10 +11,52 @@ import 'dart:io' show Platform;
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
-    await DesktopWindow.setMinWindowSize(const Size(600, 800));
-    await DesktopWindow.setWindowSize(const Size(900, 1000));
+    await DesktopWindow.setMinWindowSize(const Size(1280, 900));
+    Size windowSize = Size(1280, 1000);
+    await DesktopWindow.setWindowSize(windowSize);
+
+    Size screenSize = await _getScreenSize();
+    if (screenSize != Size.zero) {
+      double left = (screenSize.width - windowSize.width) / 2;
+      double top = (screenSize.height - windowSize.height) / 2;
+      await _setWindowPosition(left, top);
+    }
   }
   runApp(MyApp());
+}
+
+Future<Size> _getScreenSize() async {
+  if (Platform.isWindows) {
+    try {
+      var result = await Process.run(
+          'wmic', ['desktopmonitor', 'get', 'ScreenHeight,ScreenWidth']);
+      if (result.exitCode == 0) {
+        var lines = result.stdout.toString().split('\n');
+        if (lines.length > 1) {
+          var parts = lines[1].trim().split(RegExp(r'\s+'));
+          if (parts.length == 2) {
+            return Size(double.parse(parts[1]), double.parse(parts[0]));
+          }
+        }
+      }
+    } catch (e) {
+      print('Error getting screen size: $e');
+    }
+  }
+  return Size.zero;
+}
+
+Future<void> _setWindowPosition(double left, double top) async {
+  if (Platform.isWindows) {
+    try {
+      await Process.run('powershell', [
+        '-command',
+        '\$window = New-Object -ComObject Shell.Application; \$window.MinimizeAll(); Start-Sleep -Milliseconds 100; [System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point(${left.round()}, ${top.round()}); [System.Windows.Forms.SendKeys]::SendWait("%{UP}")'
+      ]);
+    } catch (e) {
+      print('Error setting window position: $e');
+    }
+  }
 }
 
 class MyApp extends StatelessWidget {
@@ -131,7 +174,7 @@ class _TemperatureDashboardState extends State<TemperatureDashboard> {
           if (Platform.isWindows || Platform.isLinux || Platform.isMacOS)
             IconButton(
               icon: Icon(Icons.aspect_ratio),
-              onPressed: () => _setWindowSize(Size(1200, 1000)),
+              onPressed: () => _setWindowSize(Size(1280, 1000)),
               tooltip: 'ウィンドウを拡大',
             ),
         ],
@@ -142,17 +185,50 @@ class _TemperatureDashboardState extends State<TemperatureDashboard> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              if (windowSize != null)
-                Text(
-                    '現在のウィンドウサイズ: ${windowSize!.width.toInt()} x ${windowSize!.height.toInt()}'),
-              SizedBox(height: 10),
-              _buildCurrentTemperatureCard(),
+              Row(
+                children: [
+                  Expanded(child: _buildStatusCard()),
+                  SizedBox(width: 16),
+                  Expanded(child: _buildCurrentTemperatureCard()),
+                ],
+              ),
               SizedBox(height: 20),
               _buildTemperatureHistoryCard(),
-              SizedBox(height: 20),
-              _buildStatusCard(),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStatusCard() {
+    return Card(
+      elevation: 4,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Container(
+        height: 150,
+        padding: EdgeInsets.all(16),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('システム状態',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            Spacer(),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.check_circle, size: 48, color: Colors.green),
+                SizedBox(width: 10),
+                Text('正常に稼働中',
+                    style: TextStyle(
+                        color: Colors.green,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16)),
+              ],
+            ),
+            Spacer(),
+          ],
         ),
       ),
     );
@@ -162,32 +238,35 @@ class _TemperatureDashboardState extends State<TemperatureDashboard> {
     return Card(
       elevation: 4,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
+      child: Container(
+        height: 150,
         padding: EdgeInsets.all(16),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             Text('現在の水温',
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-            SizedBox(height: 10),
+            Spacer(),
             Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 latestTemperature == null
                     ? CircularProgressIndicator()
                     : Text(
                         '${latestTemperature?.toStringAsFixed(1)}°C',
                         style: TextStyle(
-                            fontSize: 48,
+                            fontSize: 36,
                             fontWeight: FontWeight.bold,
                             color: Colors.blue),
                       ),
-                Icon(Icons.water_drop, size: 48, color: Colors.blue),
+                SizedBox(width: 10),
+                Icon(Icons.water_drop, size: 36, color: Colors.blue),
               ],
             ),
-            SizedBox(height: 10),
+            Spacer(),
             Text('最終更新: ${_formatTimestamp(lastUpdated)}',
-                style: TextStyle(color: Colors.grey)),
+                style: TextStyle(color: Colors.grey, fontSize: 12)),
           ],
         ),
       ),
@@ -207,7 +286,7 @@ class _TemperatureDashboardState extends State<TemperatureDashboard> {
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
             SizedBox(height: 10),
             Container(
-              height: windowSize != null ? windowSize!.height * 0.5 : 500,
+              height: 400,
               child: temperatureHistory.isEmpty
                   ? Center(child: CircularProgressIndicator())
                   : _buildLineChart(),
@@ -222,105 +301,127 @@ class _TemperatureDashboardState extends State<TemperatureDashboard> {
     List<FlSpot> spots = [];
     double minY = double.infinity;
     double maxY = double.negativeInfinity;
+    DateTime? startDate;
 
-    for (var i = 0; i < temperatureHistory.length; i++) {
-      final data = temperatureHistory[i];
+    final last24Hours = temperatureHistory.length > 144
+        ? temperatureHistory.sublist(temperatureHistory.length - 144)
+        : temperatureHistory;
+
+    for (var i = 0; i < last24Hours.length; i++) {
+      final data = last24Hours[i];
       final temperature = data['temperature'] as double;
       spots.add(FlSpot(i.toDouble(), temperature));
       if (temperature < minY) minY = temperature;
       if (temperature > maxY) maxY = temperature;
+
+      if (startDate == null) {
+        startDate = DateTime.parse(data['timestamp']);
+      }
     }
 
-    return LineChart(
-      LineChartData(
-        gridData: FlGridData(show: true),
-        titlesData: FlTitlesData(
-          bottomTitles: AxisTitles(
-            sideTitles: SideTitles(
-              showTitles: true,
-              reservedSize: 22,
-              interval: 24,
-              getTitlesWidget: (value, meta) {
-                final index = value.toInt();
-                if (index < temperatureHistory.length) {
-                  final data = temperatureHistory[index];
-                  return Text(
-                    _formatTime(data['timestamp']),
-                    style: const TextStyle(
-                      color: Color(0xff68737d),
-                      fontWeight: FontWeight.bold,
-                      fontSize: 10,
-                    ),
-                  );
-                }
-                return const Text('');
-              },
-            ),
-          ),
-          leftTitles: AxisTitles(
-            sideTitles: SideTitles(
-              showTitles: true,
-              getTitlesWidget: (value, meta) {
-                return Text(
-                  '${value.toStringAsFixed(1)}°C',
-                  style: const TextStyle(
-                    color: Color(0xff67727d),
-                    fontWeight: FontWeight.bold,
-                    fontSize: 10,
+    return Column(
+      children: [
+        SizedBox(
+          height: 350, // グラフの高さを少し減らす
+          child: LineChart(
+            LineChartData(
+              gridData: FlGridData(show: true),
+              titlesData: FlTitlesData(
+                bottomTitles: AxisTitles(
+                  sideTitles: SideTitles(
+                    showTitles: true,
+                    reservedSize: 30,
+                    interval: 6,
+                    getTitlesWidget: (value, meta) {
+                      final index = value.toInt();
+                      if (index < last24Hours.length && index % 6 == 0) {
+                        final data = last24Hours[index];
+                        final dateTime = DateTime.parse(data['timestamp']);
+                        return Text(
+                          DateFormat('HH:mm').format(dateTime),
+                          style: const TextStyle(
+                            color: Color(0xff68737d),
+                            fontWeight: FontWeight.bold,
+                            fontSize: 10,
+                          ),
+                        );
+                      }
+                      return const Text('');
+                    },
                   ),
-                );
-              },
-              reservedSize: 28,
-            ),
-          ),
-          topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-        ),
-        borderData: FlBorderData(show: true),
-        minX: 0,
-        maxX: temperatureHistory.length.toDouble() - 1,
-        minY: minY - 1,
-        maxY: maxY + 1,
-        lineBarsData: [
-          LineChartBarData(
-            spots: spots,
-            isCurved: true,
-            color: Colors.blue,
-            barWidth: 3,
-            isStrokeCapRound: true,
-            dotData: FlDotData(show: false),
-            belowBarData: BarAreaData(show: false),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildStatusCard() {
-    return Card(
-      elevation: 4,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: EdgeInsets.all(16),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('システム状態',
-                    style:
-                        TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                SizedBox(height: 10),
-                Text('正常に稼働中',
-                    style: TextStyle(
-                        color: Colors.green, fontWeight: FontWeight.bold)),
+                ),
+                leftTitles: AxisTitles(
+                  sideTitles: SideTitles(
+                    showTitles: true,
+                    getTitlesWidget: (value, meta) {
+                      return Text(
+                        '${value.toStringAsFixed(1)}°C',
+                        style: const TextStyle(
+                          color: Color(0xff67727d),
+                          fontWeight: FontWeight.bold,
+                          fontSize: 10,
+                        ),
+                      );
+                    },
+                    reservedSize: 28,
+                  ),
+                ),
+                topTitles:
+                    AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                rightTitles:
+                    AxisTitles(sideTitles: SideTitles(showTitles: false)),
+              ),
+              borderData: FlBorderData(show: true),
+              minX: 0,
+              maxX: last24Hours.length.toDouble() - 1,
+              minY: minY - 1,
+              maxY: maxY + 1,
+              lineBarsData: [
+                LineChartBarData(
+                  spots: spots,
+                  isCurved: true,
+                  color: Colors.blue,
+                  barWidth: 3,
+                  isStrokeCapRound: true,
+                  dotData: FlDotData(show: false),
+                  belowBarData: BarAreaData(show: false),
+                ),
               ],
+              lineTouchData: LineTouchData(
+                enabled: true,
+                touchTooltipData: LineTouchTooltipData(
+                  getTooltipItems: (List<LineBarSpot> touchedBarSpots) {
+                    return touchedBarSpots.map((barSpot) {
+                      final flSpot = barSpot;
+                      if (flSpot.x.toInt() < last24Hours.length) {
+                        final data = last24Hours[flSpot.x.toInt()];
+                        final time = _formatTimestamp(data['timestamp']);
+                        return LineTooltipItem(
+                          '${flSpot.y.toStringAsFixed(1)}°C\n$time',
+                          const TextStyle(color: Colors.white),
+                        );
+                      }
+                      return null;
+                    }).toList();
+                  },
+                ),
+              ),
             ),
-            Icon(Icons.check_circle, size: 48, color: Colors.green),
-          ],
+          ),
         ),
-      ),
+        if (startDate != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 8.0),
+            child: Text(
+              'Date: ${DateFormat('yyyy/MM/dd').format(startDate)}',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.bold,
+                color: Colors.black54,
+              ),
+            ),
+          ),
+      ],
     );
   }
 
@@ -328,10 +429,5 @@ class _TemperatureDashboardState extends State<TemperatureDashboard> {
     if (timestamp == null) return 'N/A';
     final dateTime = DateTime.parse(timestamp);
     return DateFormat('yyyy/MM/dd HH:mm').format(dateTime);
-  }
-
-  String _formatTime(String timestamp) {
-    final dateTime = DateTime.parse(timestamp);
-    return DateFormat('HH:mm').format(dateTime);
   }
 }
