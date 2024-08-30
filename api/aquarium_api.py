@@ -70,14 +70,47 @@ class WaterTemperature(Resource):
             if start_date and end_date:
                 app.logger.info(f'Querying data between {start_date} and {end_date}')
                 query = '''
-                SELECT * FROM water_temperature 
-                WHERE timestamp BETWEEN ? AND ?
-                ORDER BY timestamp DESC
+                SELECT 
+                    wt.id AS water_temp_id,
+                    wt.temperature AS water_temperature,
+                    wt.timestamp AS water_temp_timestamp,
+                    ed.id AS env_data_id,
+                    ed.temperature AS air_temperature,
+                    ed.humidity,
+                    ed.timestamp AS env_data_timestamp
+                FROM 
+                    water_temperature wt
+                JOIN 
+                    environmental_data ed
+                ON 
+                    strftime('%Y-%m-%d %H:%M', wt.timestamp) = strftime('%Y-%m-%d %H:%M', ed.timestamp)
+                WHERE ed.timestamp BETWEEN ? AND ?
+                ORDER BY ed.timestamp DESC
                 '''
                 params = (start_date, end_date)
             else:
                 app.logger.info('Querying latest data')
-                query = 'SELECT * FROM water_temperature ORDER BY timestamp DESC'
+                query = '''
+                WITH latest_water_temp AS (
+                SELECT * FROM water_temperature
+                ORDER BY timestamp DESC
+                LIMIT 1
+                )
+                SELECT 
+                    wt.id AS water_temp_id,
+                    wt.temperature AS water_temperature,
+                    wt.timestamp AS water_temp_timestamp,
+                    ed.id AS env_data_id,
+                    ed.temperature AS air_temperature,
+                    ed.humidity,
+                    ed.timestamp AS env_data_timestamp
+                FROM 
+                    latest_water_temp wt
+                JOIN 
+                    environmental_data ed
+                ON 
+                    strftime('%Y-%m-%d %H:%M', wt.timestamp) = strftime('%Y-%m-%d %H:%M', ed.timestamp)
+                '''
                 params = ()
 
             if limit:
@@ -85,38 +118,6 @@ class WaterTemperature(Resource):
                 params += (limit,)
 
             cursor.execute(query, params)
-            results = cursor.fetchall()
-            app.logger.info(f'Retrieved {len(results)} records')
-        except sqlite3.Error as e:
-            app.logger.error(f'Database error: {e}', exc_info=True)
-            return jsonify({'error': 'Database error occurred'}), 500
-        finally:
-            conn.close()
-
-        return jsonify(results)
-
-        app.logger.info('Received GET request for water temperature')
-        conn = sqlite3.connect(DB_PATH)
-        conn.row_factory = dict_factory
-        cursor = conn.cursor()
-
-        start_date = request.args.get('start_date')
-        end_date = request.args.get('end_date')
-
-        try:
-            if start_date and end_date:
-                app.logger.info(f'Querying data between {start_date} and {end_date}')
-                query = '''
-                SELECT * FROM water_temperature 
-                WHERE timestamp BETWEEN ? AND ?
-                ORDER BY timestamp DESC
-                '''
-                cursor.execute(query, (start_date, end_date))
-            else:
-                app.logger.info('Querying all data')
-                query = 'SELECT * FROM water_temperature ORDER BY timestamp DESC'
-                cursor.execute(query)
-
             results = cursor.fetchall()
             app.logger.info(f'Retrieved {len(results)} records')
         except sqlite3.Error as e:

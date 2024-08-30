@@ -90,11 +90,8 @@ class _TemperatureDashboardState extends State<TemperatureDashboard> {
   void initState() {
     super.initState();
     fetchLatestData();
-    fetchTemperatureHistory(); // 引数を削除
-    timer = Timer.periodic(Duration(minutes: 6), (Timer t) {
-      fetchLatestData();
-      fetchTemperatureHistory(); // 引数を削除
-    });
+    fetchTemperatureHistory();
+    _scheduleNextUpdate();
     _getWindowSize();
   }
 
@@ -102,6 +99,20 @@ class _TemperatureDashboardState extends State<TemperatureDashboard> {
   void dispose() {
     timer?.cancel();
     super.dispose();
+  }
+
+  void _scheduleNextUpdate() {
+    final now = DateTime.now();
+    final minutesToNextUpdate = 5 - (now.minute % 5) + 1;
+    final duration =
+        Duration(minutes: minutesToNextUpdate, seconds: 60 - now.second);
+
+    timer?.cancel(); // 既存のタイマーをキャンセル
+    timer = Timer(duration, () {
+      fetchLatestData();
+      fetchTemperatureHistory();
+      _scheduleNextUpdate(); // 次の更新をスケジュール
+    });
   }
 
   Future<void> _getWindowSize() async {
@@ -135,8 +146,8 @@ class _TemperatureDashboardState extends State<TemperatureDashboard> {
         if (jsonData.isNotEmpty) {
           final latestData = jsonData.first;
           setState(() {
-            latestTemperature = latestData['temperature'] as double;
-            lastUpdated = latestData['timestamp'];
+            latestTemperature = latestData['water_temperature'] as double;
+            lastUpdated = latestData['water_temp_timestamp'];
           });
         }
       } else {
@@ -310,7 +321,7 @@ class _TemperatureDashboardState extends State<TemperatureDashboard> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text('24時間の温度推移',
+                Text('24時間の推移',
                     style:
                         TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                 Row(
@@ -347,20 +358,30 @@ class _TemperatureDashboardState extends State<TemperatureDashboard> {
               ],
             ),
             SizedBox(height: 10),
-            Container(
-              height: 450,
-              child: temperatureHistory.isEmpty
-                  ? Center(child: CircularProgressIndicator())
-                  : _buildLineChart(),
-            ),
+            temperatureHistory.isEmpty
+                ? Center(child: CircularProgressIndicator())
+                : Column(
+                    children: [
+                      Container(
+                        height: 300,
+                        child: _buildTemperatureChart(),
+                      ),
+                      SizedBox(height: 20),
+                      Container(
+                        height: 300,
+                        child: _buildHumidityChart(),
+                      ),
+                    ],
+                  ),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildLineChart() {
-    List<FlSpot> spots = [];
+  Widget _buildTemperatureChart() {
+    List<FlSpot> waterTempSpots = [];
+    List<FlSpot> airTempSpots = [];
     double minY = double.infinity;
     double maxY = double.negativeInfinity;
     DateTime? startDate;
@@ -371,68 +392,27 @@ class _TemperatureDashboardState extends State<TemperatureDashboard> {
 
     for (var i = 0; i < last24Hours.length; i++) {
       final data = last24Hours[i];
-      final temperature = data['temperature'] as double;
-      spots.add(FlSpot(i.toDouble(), temperature));
-      if (temperature < minY) minY = temperature;
-      if (temperature > maxY) maxY = temperature;
+      final waterTemp = data['water_temperature'] as double;
+      final airTemp = data['air_temperature'] as double;
+
+      waterTempSpots.add(FlSpot(i.toDouble(), waterTemp));
+      airTempSpots.add(FlSpot(i.toDouble(), airTemp));
+
+      minY = [minY, waterTemp, airTemp].reduce((a, b) => a < b ? a : b);
+      maxY = [maxY, waterTemp, airTemp].reduce((a, b) => a > b ? a : b);
 
       if (startDate == null) {
-        startDate = DateTime.parse(data['timestamp']);
+        startDate = DateTime.parse(data['water_temp_timestamp']);
       }
     }
 
     return Column(
       children: [
-        SizedBox(
-          height: 350, // グラフの高さを少し減らす
+        Expanded(
           child: LineChart(
             LineChartData(
               gridData: FlGridData(show: true),
-              titlesData: FlTitlesData(
-                bottomTitles: AxisTitles(
-                  sideTitles: SideTitles(
-                    showTitles: true,
-                    reservedSize: 30,
-                    interval: 6,
-                    getTitlesWidget: (value, meta) {
-                      final index = value.toInt();
-                      if (index < last24Hours.length && index % 6 == 0) {
-                        final data = last24Hours[index];
-                        final dateTime = DateTime.parse(data['timestamp']);
-                        return Text(
-                          DateFormat('HH:mm').format(dateTime),
-                          style: const TextStyle(
-                            color: Color(0xff68737d),
-                            fontWeight: FontWeight.bold,
-                            fontSize: 10,
-                          ),
-                        );
-                      }
-                      return const Text('');
-                    },
-                  ),
-                ),
-                leftTitles: AxisTitles(
-                  sideTitles: SideTitles(
-                    showTitles: true,
-                    getTitlesWidget: (value, meta) {
-                      return Text(
-                        '${value.toStringAsFixed(1)}°C',
-                        style: const TextStyle(
-                          color: Color(0xff67727d),
-                          fontWeight: FontWeight.bold,
-                          fontSize: 10,
-                        ),
-                      );
-                    },
-                    reservedSize: 28,
-                  ),
-                ),
-                topTitles:
-                    AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                rightTitles:
-                    AxisTitles(sideTitles: SideTitles(showTitles: false)),
-              ),
+              titlesData: _getChartTitles(last24Hours),
               borderData: FlBorderData(show: true),
               minX: 0,
               maxX: last24Hours.length.toDouble() - 1,
@@ -440,7 +420,7 @@ class _TemperatureDashboardState extends State<TemperatureDashboard> {
               maxY: maxY + 1,
               lineBarsData: [
                 LineChartBarData(
-                  spots: spots,
+                  spots: waterTempSpots,
                   isCurved: true,
                   color: Colors.blue,
                   barWidth: 3,
@@ -448,41 +428,180 @@ class _TemperatureDashboardState extends State<TemperatureDashboard> {
                   dotData: FlDotData(show: false),
                   belowBarData: BarAreaData(show: false),
                 ),
-              ],
-              lineTouchData: LineTouchData(
-                enabled: true,
-                touchTooltipData: LineTouchTooltipData(
-                  getTooltipItems: (List<LineBarSpot> touchedBarSpots) {
-                    return touchedBarSpots.map((barSpot) {
-                      final flSpot = barSpot;
-                      if (flSpot.x.toInt() < last24Hours.length) {
-                        final data = last24Hours[flSpot.x.toInt()];
-                        final time = _formatTimestamp(data['timestamp']);
-                        return LineTooltipItem(
-                          '${flSpot.y.toStringAsFixed(1)}°C\n$time',
-                          const TextStyle(color: Colors.white),
-                        );
-                      }
-                      return null;
-                    }).toList();
-                  },
+                LineChartBarData(
+                  spots: airTempSpots,
+                  isCurved: true,
+                  color: Colors.red,
+                  barWidth: 3,
+                  isStrokeCapRound: true,
+                  dotData: FlDotData(show: false),
+                  belowBarData: BarAreaData(show: false),
                 ),
-              ),
+              ],
+              lineTouchData:
+                  _getLineTouchData(last24Hours, isTemperature: true),
             ),
           ),
         ),
-        if (startDate != null)
-          Padding(
-            padding: const EdgeInsets.only(top: 8.0),
-            child: Text(
-              'Date: ${DateFormat('yyyy/MM/dd').format(startDate)}',
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.bold,
-                color: Colors.black54,
-              ),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            _legendItem('水温', Colors.blue),
+            SizedBox(width: 20),
+            _legendItem('気温', Colors.red),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildHumidityChart() {
+    List<FlSpot> humiditySpots = [];
+    double minY = double.infinity;
+    double maxY = double.negativeInfinity;
+
+    final last24Hours = temperatureHistory.length > 144
+        ? temperatureHistory.sublist(temperatureHistory.length - 144)
+        : temperatureHistory;
+
+    for (var i = 0; i < last24Hours.length; i++) {
+      final data = last24Hours[i];
+      final humidity = data['humidity'] as double;
+
+      humiditySpots.add(FlSpot(i.toDouble(), humidity));
+
+      minY = minY < humidity ? minY : humidity;
+      maxY = maxY > humidity ? maxY : humidity;
+    }
+
+    return Column(
+      children: [
+        Expanded(
+          child: LineChart(
+            LineChartData(
+              gridData: FlGridData(show: true),
+              titlesData: _getChartTitles(last24Hours),
+              borderData: FlBorderData(show: true),
+              minX: 0,
+              maxX: last24Hours.length.toDouble() - 1,
+              minY: minY - 1,
+              maxY: maxY + 1,
+              lineBarsData: [
+                LineChartBarData(
+                  spots: humiditySpots,
+                  isCurved: true,
+                  color: Colors.green,
+                  barWidth: 3,
+                  isStrokeCapRound: true,
+                  dotData: FlDotData(show: false),
+                  belowBarData: BarAreaData(show: false),
+                ),
+              ],
+              lineTouchData:
+                  _getLineTouchData(last24Hours, isTemperature: false),
             ),
           ),
+        ),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            _legendItem('湿度', Colors.green),
+          ],
+        ),
+      ],
+    );
+  }
+
+  FlTitlesData _getChartTitles(List<Map<String, dynamic>> data) {
+    return FlTitlesData(
+      bottomTitles: AxisTitles(
+        sideTitles: SideTitles(
+          showTitles: true,
+          reservedSize: 30,
+          interval: 6,
+          getTitlesWidget: (value, meta) {
+            final index = value.toInt();
+            if (index < data.length && index % 6 == 0) {
+              final dateTime =
+                  DateTime.parse(data[index]['water_temp_timestamp']);
+              return Text(
+                DateFormat('HH:mm').format(dateTime),
+                style: const TextStyle(
+                  color: Color(0xff68737d),
+                  fontWeight: FontWeight.bold,
+                  fontSize: 10,
+                ),
+              );
+            }
+            return const Text('');
+          },
+        ),
+      ),
+      leftTitles: AxisTitles(
+        sideTitles: SideTitles(
+          showTitles: true,
+          getTitlesWidget: (value, meta) {
+            return Text(
+              '${value.toStringAsFixed(1)}',
+              style: const TextStyle(
+                color: Color(0xff67727d),
+                fontWeight: FontWeight.bold,
+                fontSize: 10,
+              ),
+            );
+          },
+          reservedSize: 28,
+        ),
+      ),
+      topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+      rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+    );
+  }
+
+  LineTouchData _getLineTouchData(List<Map<String, dynamic>> data,
+      {required bool isTemperature}) {
+    return LineTouchData(
+      enabled: true,
+      touchTooltipData: LineTouchTooltipData(
+        getTooltipItems: (List<LineBarSpot> touchedBarSpots) {
+          return touchedBarSpots.map((barSpot) {
+            final flSpot = barSpot;
+            if (flSpot.x.toInt() < data.length) {
+              final currentData = data[flSpot.x.toInt()];
+              final time =
+                  _formatTimestamp(currentData['water_temp_timestamp']);
+              String tooltipText = '';
+              if (isTemperature) {
+                if (barSpot.barIndex == 0) {
+                  tooltipText = '水温: ${flSpot.y.toStringAsFixed(1)}°C\n$time';
+                } else {
+                  tooltipText = '気温: ${flSpot.y.toStringAsFixed(1)}°C\n$time';
+                }
+              } else {
+                tooltipText = '湿度: ${flSpot.y.toStringAsFixed(1)}%\n$time';
+              }
+              return LineTooltipItem(
+                tooltipText,
+                const TextStyle(color: Colors.white),
+              );
+            }
+            return null;
+          }).toList();
+        },
+      ),
+    );
+  }
+
+  Widget _legendItem(String label, Color color) {
+    return Row(
+      children: [
+        Container(
+          width: 16,
+          height: 16,
+          color: color,
+        ),
+        SizedBox(width: 4),
+        Text(label),
       ],
     );
   }
