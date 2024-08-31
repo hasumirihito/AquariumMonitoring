@@ -79,17 +79,27 @@ class TemperatureDashboard extends StatefulWidget {
 }
 
 class _TemperatureDashboardState extends State<TemperatureDashboard> {
+  static const String API_BASE_URL = 'http://192.168.10.19:5000';
   double? latestTemperature;
+  double? latestAirTemperature;
+  double? latestHumidity;
   String? lastUpdated;
   List<Map<String, dynamic>> temperatureHistory = [];
   Timer? timer;
   Size? windowSize;
   DateTime selectedDate = DateTime.now();
+  bool isLoading = false;
+  String lastFetchDuration = '';
+  String lastHttpRequestDuration = '';
 
   @override
   void initState() {
     super.initState();
-    fetchLatestData();
+    fetchLatestData().then((_) {
+      if (mounted) {
+        setState(() {}); // 状態を更新してUIを再描画
+      }
+    });
     fetchTemperatureHistory();
     _scheduleNextUpdate();
     _getWindowSize();
@@ -109,6 +119,7 @@ class _TemperatureDashboardState extends State<TemperatureDashboard> {
 
     timer?.cancel(); // 既存のタイマーをキャンセル
     timer = Timer(duration, () {
+      print("TIMER START");
       fetchLatestData();
       fetchTemperatureHistory();
       _scheduleNextUpdate(); // 次の更新をスケジュール
@@ -139,18 +150,26 @@ class _TemperatureDashboardState extends State<TemperatureDashboard> {
 
   Future<void> fetchLatestData() async {
     try {
-      final response = await http.get(
-          Uri.parse('http://192.168.10.19:5000/water_temperature?limit=1'));
+      print("fetchLatestData START");
+      final response =
+          await http.get(Uri.parse('$API_BASE_URL/water_temperature?limit=1'));
       if (response.statusCode == 200) {
         final List<dynamic> jsonData = json.decode(response.body);
+        print("Received data: $jsonData"); // デバッグ出力を追加
         if (jsonData.isNotEmpty) {
           final latestData = jsonData.first;
+          print("Latest data: $latestData"); // デバッグ出力を追加
           setState(() {
-            latestTemperature = latestData['water_temperature'] as double;
+            latestTemperature = latestData['water_temperature'] as double?;
+            latestAirTemperature = latestData['air_temperature'] as double?;
+            latestHumidity = latestData['humidity'] as double?;
             lastUpdated = latestData['water_temp_timestamp'];
           });
+          print(
+              "Updated state: water_temp=$latestTemperature, air_temp=$latestAirTemperature, humidity=$latestHumidity"); // デバッグ出力を追加
         }
       } else {
+        print("HTTP Error: ${response.statusCode}"); // エラー情報を出力
         throw Exception('Failed to load latest temperature data');
       }
     } catch (e) {
@@ -159,6 +178,11 @@ class _TemperatureDashboardState extends State<TemperatureDashboard> {
   }
 
   Future<void> fetchTemperatureHistory() async {
+    final totalStopwatch = Stopwatch()..start();
+    setState(() {
+      isLoading = true;
+    });
+
     try {
       final startDate =
           DateTime(selectedDate.year, selectedDate.month, selectedDate.day);
@@ -168,21 +192,48 @@ class _TemperatureDashboardState extends State<TemperatureDashboard> {
       final formattedEndDate =
           DateFormat('yyyy-MM-dd HH:mm:ss').format(endDate);
 
-      final response = await http.get(
-        Uri.parse(
-            'http://192.168.10.19:5000/water_temperature?start_date=$formattedStartDate&end_date=$formattedEndDate'),
-      );
+      print(
+          'Fetching data for date: ${DateFormat('yyyy-MM-dd').format(selectedDate)}');
+      final url =
+          '$API_BASE_URL/water_temperature?start_date=$formattedStartDate&end_date=$formattedEndDate';
+      print('URL: $url');
+
+      final httpStopwatch = Stopwatch()..start();
+      final response = await http.get(Uri.parse(url));
+      httpStopwatch.stop();
+      lastHttpRequestDuration = '${httpStopwatch.elapsedMilliseconds}ms';
+      print('HTTP request duration: $lastHttpRequestDuration');
+
       if (response.statusCode == 200) {
         final List<dynamic> jsonData = json.decode(response.body);
+        print('Fetched ${jsonData.length} records');
         setState(() {
           temperatureHistory = List<Map<String, dynamic>>.from(jsonData);
+          isLoading = false;
+          lastFetchDuration = '${totalStopwatch.elapsedMilliseconds}ms';
         });
+        print(
+            'Updated temperatureHistory with ${temperatureHistory.length} records');
+        print('Total fetch duration: $lastFetchDuration');
       } else {
+        print('Failed to load data. Status code: ${response.statusCode}');
+        setState(() {
+          isLoading = false;
+          lastFetchDuration = 'Error';
+          lastHttpRequestDuration = 'Error';
+        });
         throw Exception('Failed to load temperature history');
       }
     } catch (e) {
       print('Error fetching temperature history: $e');
+      setState(() {
+        temperatureHistory = [];
+        isLoading = false;
+        lastFetchDuration = 'Error';
+        lastHttpRequestDuration = 'Error';
+      });
     }
+    totalStopwatch.stop();
   }
 
   void _selectDate(BuildContext context) async {
@@ -196,7 +247,8 @@ class _TemperatureDashboardState extends State<TemperatureDashboard> {
       setState(() {
         selectedDate = picked;
       });
-      fetchTemperatureHistory(); // 引数を削除
+      await fetchTemperatureHistory(); // awaitを使用
+      setState(() {}); // データ取得後に再描画を強制
     }
   }
 
@@ -226,6 +278,8 @@ class _TemperatureDashboardState extends State<TemperatureDashboard> {
                   Expanded(child: _buildStatusCard()),
                   SizedBox(width: 16),
                   Expanded(child: _buildCurrentTemperatureCard()),
+                  SizedBox(width: 16),
+                  Expanded(child: _buildCurrentAirConditionCard()),
                 ],
               ),
               SizedBox(height: 20),
@@ -271,6 +325,13 @@ class _TemperatureDashboardState extends State<TemperatureDashboard> {
   }
 
   Widget _buildCurrentTemperatureCard() {
+    Color getTemperatureColor(double? temperature) {
+      if (temperature == null) return Colors.black;
+      if (temperature >= 25) return Colors.red;
+      if (temperature <= 20) return Colors.blue;
+      return Colors.green;
+    }
+
     return Card(
       elevation: 4,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -294,7 +355,7 @@ class _TemperatureDashboardState extends State<TemperatureDashboard> {
                         style: TextStyle(
                             fontSize: 36,
                             fontWeight: FontWeight.bold,
-                            color: Colors.blue),
+                            color: getTemperatureColor(latestTemperature)),
                       ),
                 SizedBox(width: 10),
                 Icon(Icons.water_drop, size: 36, color: Colors.blue),
@@ -310,6 +371,9 @@ class _TemperatureDashboardState extends State<TemperatureDashboard> {
   }
 
   Widget _buildTemperatureHistoryCard() {
+    print("lastFetchDuration : $lastFetchDuration");
+    print("lastHttpRequestDuration : $lastHttpRequestDuration");
+
     return Card(
       elevation: 4,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -328,151 +392,137 @@ class _TemperatureDashboardState extends State<TemperatureDashboard> {
                   children: [
                     IconButton(
                       icon: Icon(Icons.arrow_back),
-                      onPressed: () {
-                        setState(() {
-                          selectedDate =
-                              selectedDate.subtract(Duration(days: 1));
-                        });
-                        fetchTemperatureHistory();
-                      },
+                      onPressed: isLoading
+                          ? null
+                          : () async {
+                              setState(() {
+                                selectedDate =
+                                    selectedDate.subtract(Duration(days: 1));
+                              });
+                              await fetchTemperatureHistory();
+                            },
                     ),
                     TextButton(
                       child:
                           Text(DateFormat('yyyy/MM/dd').format(selectedDate)),
-                      onPressed: () => _selectDate(context),
+                      onPressed: isLoading ? null : () => _selectDate(context),
                     ),
                     IconButton(
                       icon: Icon(Icons.arrow_forward),
-                      onPressed: selectedDate.day == DateTime.now().day
-                          ? null
-                          : () {
-                              setState(() {
-                                selectedDate =
-                                    selectedDate.add(Duration(days: 1));
-                              });
-                              fetchTemperatureHistory();
-                            },
+                      onPressed:
+                          (isLoading || selectedDate.day == DateTime.now().day)
+                              ? null
+                              : () async {
+                                  setState(() {
+                                    selectedDate =
+                                        selectedDate.add(Duration(days: 1));
+                                  });
+                                  await fetchTemperatureHistory();
+                                },
                     ),
                   ],
                 ),
               ],
             ),
             SizedBox(height: 10),
-            temperatureHistory.isEmpty
-                ? Center(child: CircularProgressIndicator())
-                : Column(
-                    children: [
-                      Container(
-                        height: 300,
-                        child: _buildTemperatureChart(),
-                      ),
-                      SizedBox(height: 20),
-                      Container(
-                        height: 300,
-                        child: _buildHumidityChart(),
-                      ),
-                    ],
+            if (isLoading)
+              Center(
+                child: Column(
+                  children: [
+                    CircularProgressIndicator(),
+                    SizedBox(height: 10),
+                    Text('データを読み込んでいます...'),
+                  ],
+                ),
+              )
+            else if (temperatureHistory.isEmpty)
+              Center(child: Text('データがありません'))
+            else
+              Column(
+                children: [
+                  Container(
+                    height: 300,
+                    child: _buildTemperatureChart(),
                   ),
+                  SizedBox(height: 20),
+                  Container(
+                    height: 300,
+                    child: _buildHumidityChart(),
+                  ),
+                ],
+              ),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildTemperatureChart() {
-    List<FlSpot> waterTempSpots = [];
-    List<FlSpot> airTempSpots = [];
-    double minY = double.infinity;
-    double maxY = double.negativeInfinity;
-    DateTime? startDate;
-
-    final last24Hours = temperatureHistory.length > 144
-        ? temperatureHistory.sublist(temperatureHistory.length - 144)
-        : temperatureHistory;
-
-    for (var i = 0; i < last24Hours.length; i++) {
-      final data = last24Hours[i];
-      final waterTemp = data['water_temperature'] as double;
-      final airTemp = data['air_temperature'] as double;
-
-      waterTempSpots.add(FlSpot(i.toDouble(), waterTemp));
-      airTempSpots.add(FlSpot(i.toDouble(), airTemp));
-
-      minY = [minY, waterTemp, airTemp].reduce((a, b) => a < b ? a : b);
-      maxY = [maxY, waterTemp, airTemp].reduce((a, b) => a > b ? a : b);
-
-      if (startDate == null) {
-        startDate = DateTime.parse(data['water_temp_timestamp']);
+  List<FlSpot> _prepareChartData(String key) {
+    List<FlSpot> spots = [];
+    for (var data in temperatureHistory) {
+      final timestamp = DateTime.parse(data['water_temp_timestamp']);
+      final value = data[key] as double?;
+      if (value != null) {
+        final minutes = timestamp.hour * 60 + timestamp.minute;
+        spots.add(FlSpot(minutes.toDouble(), value));
       }
     }
+    print('Prepared ${spots.length} spots for $key'); // デバッグプリント追加
+    return spots;
+  }
 
-    return Column(
-      children: [
-        Expanded(
-          child: LineChart(
-            LineChartData(
-              gridData: FlGridData(show: true),
-              titlesData: _getChartTitles(last24Hours),
-              borderData: FlBorderData(show: true),
-              minX: 0,
-              maxX: last24Hours.length.toDouble() - 1,
-              minY: minY - 1,
-              maxY: maxY + 1,
-              lineBarsData: [
-                LineChartBarData(
-                  spots: waterTempSpots,
-                  isCurved: true,
-                  color: Colors.blue,
-                  barWidth: 3,
-                  isStrokeCapRound: true,
-                  dotData: FlDotData(show: false),
-                  belowBarData: BarAreaData(show: false),
-                ),
-                LineChartBarData(
-                  spots: airTempSpots,
-                  isCurved: true,
-                  color: Colors.red,
-                  barWidth: 3,
-                  isStrokeCapRound: true,
-                  dotData: FlDotData(show: false),
-                  belowBarData: BarAreaData(show: false),
-                ),
-              ],
-              lineTouchData:
-                  _getLineTouchData(last24Hours, isTemperature: true),
-            ),
+  Widget _buildTemperatureChart() {
+    final waterTempSpots = _prepareChartData('water_temperature');
+    final airTempSpots = _prepareChartData('air_temperature');
+
+    // Y軸の範囲を計算
+    final allTemps =
+        [...waterTempSpots, ...airTempSpots].map((spot) => spot.y).toList();
+    final minY = allTemps.reduce((a, b) => a < b ? a : b);
+    final maxY = allTemps.reduce((a, b) => a > b ? a : b);
+
+    return LineChart(
+      LineChartData(
+        gridData: FlGridData(show: true),
+        titlesData: _getChartTitles(),
+        borderData: FlBorderData(show: true),
+        minX: 0,
+        maxX: 24 * 60 - 1,
+        minY: minY - 1, // 下限を調整
+        maxY: maxY + 1, // 上限を調整
+        lineBarsData: [
+          LineChartBarData(
+            spots: waterTempSpots,
+            isCurved: true,
+            color: Colors.blue,
+            barWidth: 3,
+            isStrokeCapRound: true,
+            dotData: FlDotData(show: false),
+            belowBarData: BarAreaData(show: false),
           ),
-        ),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            _legendItem('水温', Colors.blue),
-            SizedBox(width: 20),
-            _legendItem('気温', Colors.red),
-          ],
-        ),
-      ],
+          LineChartBarData(
+            spots: airTempSpots,
+            isCurved: true,
+            color: Colors.red,
+            barWidth: 3,
+            isStrokeCapRound: true,
+            dotData: FlDotData(show: false),
+            belowBarData: BarAreaData(show: false),
+          ),
+        ],
+        lineTouchData: _getLineTouchData(),
+      ),
     );
   }
 
   Widget _buildHumidityChart() {
-    List<FlSpot> humiditySpots = [];
-    double minY = double.infinity;
-    double maxY = double.negativeInfinity;
+    final humiditySpots = _prepareChartData('humidity');
 
-    final last24Hours = temperatureHistory.length > 144
-        ? temperatureHistory.sublist(temperatureHistory.length - 144)
-        : temperatureHistory;
-
-    for (var i = 0; i < last24Hours.length; i++) {
-      final data = last24Hours[i];
-      final humidity = data['humidity'] as double;
-
-      humiditySpots.add(FlSpot(i.toDouble(), humidity));
-
-      minY = minY < humidity ? minY : humidity;
-      maxY = maxY > humidity ? maxY : humidity;
-    }
+    // Y軸の範囲を計算
+    final minY =
+        humiditySpots.map((spot) => spot.y).reduce((a, b) => a < b ? a : b);
+    final maxY =
+        humiditySpots.map((spot) => spot.y).reduce((a, b) => a > b ? a : b);
 
     return Column(
       children: [
@@ -480,10 +530,10 @@ class _TemperatureDashboardState extends State<TemperatureDashboard> {
           child: LineChart(
             LineChartData(
               gridData: FlGridData(show: true),
-              titlesData: _getChartTitles(last24Hours),
+              titlesData: _getChartTitles(),
               borderData: FlBorderData(show: true),
               minX: 0,
-              maxX: last24Hours.length.toDouble() - 1,
+              maxX: 24 * 60 - 1,
               minY: minY - 1,
               maxY: maxY + 1,
               lineBarsData: [
@@ -497,8 +547,7 @@ class _TemperatureDashboardState extends State<TemperatureDashboard> {
                   belowBarData: BarAreaData(show: false),
                 ),
               ],
-              lineTouchData:
-                  _getLineTouchData(last24Hours, isTemperature: false),
+              lineTouchData: _getLineTouchData(),
             ),
           ),
         ),
@@ -512,20 +561,88 @@ class _TemperatureDashboardState extends State<TemperatureDashboard> {
     );
   }
 
-  FlTitlesData _getChartTitles(List<Map<String, dynamic>> data) {
+  Widget _buildCurrentAirConditionCard() {
+    return Card(
+      elevation: 4,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Container(
+        height: 150,
+        padding: EdgeInsets.all(16),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Text('現在の気温・湿度',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            Spacer(),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Column(
+                  children: [
+                    Icon(Icons.thermostat, size: 24, color: Colors.orange),
+                    SizedBox(height: 4),
+                    latestAirTemperature == null
+                        ? Text('--°C',
+                            style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.orange,
+                            ))
+                        : Text(
+                            '${latestAirTemperature?.toStringAsFixed(1)}°C',
+                            style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.orange,
+                            ),
+                          ),
+                  ],
+                ),
+                SizedBox(width: 20),
+                Column(
+                  children: [
+                    Icon(Icons.water_drop, size: 24, color: Colors.blue),
+                    SizedBox(height: 4),
+                    latestHumidity == null
+                        ? Text('--%',
+                            style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.blue,
+                            ))
+                        : Text(
+                            '${latestHumidity?.toStringAsFixed(1)}%',
+                            style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.blue,
+                            ),
+                          ),
+                  ],
+                ),
+              ],
+            ),
+            Spacer(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  FlTitlesData _getChartTitles() {
     return FlTitlesData(
       bottomTitles: AxisTitles(
         sideTitles: SideTitles(
           showTitles: true,
           reservedSize: 30,
-          interval: 6,
+          interval: 120, // 2時間ごとに表示
           getTitlesWidget: (value, meta) {
-            final index = value.toInt();
-            if (index < data.length && index % 6 == 0) {
-              final dateTime =
-                  DateTime.parse(data[index]['water_temp_timestamp']);
+            final hour = (value ~/ 60).toInt();
+            if (hour % 2 == 0) {
+              // 偶数時のみ表示
               return Text(
-                DateFormat('HH:mm').format(dateTime),
+                '${hour.toString().padLeft(2, '0')}:00',
                 style: const TextStyle(
                   color: Color(0xff68737d),
                   fontWeight: FontWeight.bold,
@@ -542,7 +659,7 @@ class _TemperatureDashboardState extends State<TemperatureDashboard> {
           showTitles: true,
           getTitlesWidget: (value, meta) {
             return Text(
-              '${value.toStringAsFixed(1)}',
+              '${value.toInt()}°C',
               style: const TextStyle(
                 color: Color(0xff67727d),
                 fontWeight: FontWeight.bold,
@@ -558,34 +675,26 @@ class _TemperatureDashboardState extends State<TemperatureDashboard> {
     );
   }
 
-  LineTouchData _getLineTouchData(List<Map<String, dynamic>> data,
-      {required bool isTemperature}) {
+  LineTouchData _getLineTouchData() {
     return LineTouchData(
       enabled: true,
       touchTooltipData: LineTouchTooltipData(
         getTooltipItems: (List<LineBarSpot> touchedBarSpots) {
           return touchedBarSpots.map((barSpot) {
             final flSpot = barSpot;
-            if (flSpot.x.toInt() < data.length) {
-              final currentData = data[flSpot.x.toInt()];
-              final time =
-                  _formatTimestamp(currentData['water_temp_timestamp']);
-              String tooltipText = '';
-              if (isTemperature) {
-                if (barSpot.barIndex == 0) {
-                  tooltipText = '水温: ${flSpot.y.toStringAsFixed(1)}°C\n$time';
-                } else {
-                  tooltipText = '気温: ${flSpot.y.toStringAsFixed(1)}°C\n$time';
-                }
-              } else {
-                tooltipText = '湿度: ${flSpot.y.toStringAsFixed(1)}%\n$time';
-              }
-              return LineTooltipItem(
-                tooltipText,
-                const TextStyle(color: Colors.white),
-              );
+            final hour = (flSpot.x ~/ 60).toInt();
+            final minute = (flSpot.x % 60).toInt();
+            final time = '$hour:${minute.toString().padLeft(2, '0')}';
+            String tooltipText = '';
+            if (barSpot.barIndex == 0) {
+              tooltipText = '水温: ${flSpot.y.toStringAsFixed(1)}°C\n$time';
+            } else {
+              tooltipText = '気温: ${flSpot.y.toStringAsFixed(1)}°C\n$time';
             }
-            return null;
+            return LineTooltipItem(
+              tooltipText,
+              const TextStyle(color: Colors.white),
+            );
           }).toList();
         },
       ),
