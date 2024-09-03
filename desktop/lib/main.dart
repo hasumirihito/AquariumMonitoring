@@ -302,8 +302,25 @@ class _TemperatureDashboardState extends State<TemperatureDashboard> {
           mainAxisAlignment: MainAxisAlignment.center,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('システム状態',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('システム状態',
+                    style:
+                        TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                isLoading
+                    ? SizedBox(
+                        width: 24,
+                        height: 24,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : IconButton(
+                        icon: Icon(Icons.refresh),
+                        onPressed: _manualUpdate,
+                        tooltip: '手動更新',
+                      ),
+              ],
+            ),
             Spacer(),
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -322,6 +339,26 @@ class _TemperatureDashboardState extends State<TemperatureDashboard> {
         ),
       ),
     );
+  }
+
+  Future<void> _manualUpdate() async {
+    setState(() {
+      isLoading = true;
+    });
+
+    try {
+      await Future.wait([
+        fetchLatestData(),
+        fetchTemperatureHistory(),
+      ]);
+    } catch (e) {
+      print('Error during manual update: $e');
+      // エラー処理を追加することもできます（例：スナックバーでユーザーに通知）
+    } finally {
+      setState(() {
+        isLoading = false;
+      });
+    }
   }
 
   Widget _buildCurrentTemperatureCard() {

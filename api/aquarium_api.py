@@ -83,7 +83,7 @@ class WaterTemperature(Resource):
                 JOIN 
                     environmental_data ed
                 ON 
-                    strftime('%Y-%m-%d %H:%M', wt.timestamp) = strftime('%Y-%m-%d %H:%M', ed.timestamp)
+                    wt.timestamp = ed.timestamp
                 WHERE ed.timestamp BETWEEN ? AND ?
                 ORDER BY ed.timestamp DESC
                 '''
@@ -109,7 +109,7 @@ class WaterTemperature(Resource):
                 JOIN 
                     environmental_data ed
                 ON 
-                    strftime('%Y-%m-%d %H:%M', wt.timestamp) = strftime('%Y-%m-%d %H:%M', ed.timestamp)
+                    wt.timestamp = ed.timestamp
                 '''
                 params = ()
 
