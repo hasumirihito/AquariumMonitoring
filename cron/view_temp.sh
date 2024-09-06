@@ -1,0 +1,1 @@
+watch -n 1 cat  /var/log/aquarium_monitoring/temp.log
