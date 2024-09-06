@@ -17,14 +17,22 @@ class ApiService {
 
   static Future<List<Map<String, dynamic>>> fetchTemperatureHistory(
       DateTime startDate, DateTime endDate) async {
-    final formattedStartDate = startDate.toIso8601String();
-    final formattedEndDate = endDate.toIso8601String();
+    // 日付をYYYY-MM-DD HH:mm:ss形式にフォーマット
+    final formattedStartDate = startDate.toString().split('.')[0];
+    final formattedEndDate = endDate.toString().split('.')[0];
+
+    final encodedStartDate = Uri.encodeComponent(formattedStartDate);
+    final encodedEndDate = Uri.encodeComponent(formattedEndDate);
+
     final url =
-        '${API_BASE_URL}/water_temperature?start_date=$formattedStartDate&end_date=$formattedEndDate';
+        '${API_BASE_URL}/water_temperature?start_date=$encodedStartDate&end_date=$encodedEndDate';
+
+    print('Fetching data from: $url'); // デバッグ用
 
     final response = await http.get(Uri.parse(url));
     if (response.statusCode == 200) {
       final List<dynamic> jsonData = json.decode(response.body);
+      print('Received ${jsonData.length} records'); // デバッグ用
       return List<Map<String, dynamic>>.from(jsonData);
     }
     throw Exception('Failed to load temperature history');

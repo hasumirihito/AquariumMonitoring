@@ -1,3 +1,5 @@
+// lib/screens/temperature_dashboard.dart
+
 import 'package:flutter/material.dart';
 import 'dart:async';
 import 'package:intl/intl.dart';
@@ -29,7 +31,7 @@ class _TemperatureDashboardState extends State<TemperatureDashboard> {
   void initState() {
     super.initState();
     fetchLatestData();
-    fetchTemperatureHistory();
+    fetchTemperatureHistory(selectedDate);
     _scheduleNextUpdate();
   }
 
@@ -48,7 +50,7 @@ class _TemperatureDashboardState extends State<TemperatureDashboard> {
     timer?.cancel();
     timer = Timer(duration, () {
       fetchLatestData();
-      fetchTemperatureHistory();
+      fetchTemperatureHistory(selectedDate);
       _scheduleNextUpdate();
     });
   }
@@ -67,16 +69,30 @@ class _TemperatureDashboardState extends State<TemperatureDashboard> {
     }
   }
 
-  Future<void> fetchTemperatureHistory() async {
+  Future<void> fetchTemperatureHistory(DateTime selectedDate) async {
     setState(() {
       isLoading = true;
     });
 
     try {
+      print("fetchTemperatureHistory selectedDate:$selectedDate");
       final startDate =
           DateTime(selectedDate.year, selectedDate.month, selectedDate.day);
       final endDate = startDate.add(Duration(days: 1));
+      print(
+          'Fetching data for: ${startDate.toIso8601String()} to ${endDate.toIso8601String()}');
+
       final data = await ApiService.fetchTemperatureHistory(startDate, endDate);
+
+      print('Received ${data.length} records');
+
+      if (data.isEmpty) {
+        print('No data received for the selected date');
+      } else {
+        print('First record: ${data.first}');
+        print('Last record: ${data.last}');
+      }
+
       setState(() {
         temperatureHistory = data;
         isLoading = false;
@@ -98,7 +114,7 @@ class _TemperatureDashboardState extends State<TemperatureDashboard> {
     try {
       await Future.wait([
         fetchLatestData(),
-        fetchTemperatureHistory(),
+        fetchTemperatureHistory(selectedDate),
       ]);
     } catch (e) {
       print('Error during manual update: $e');
@@ -120,7 +136,7 @@ class _TemperatureDashboardState extends State<TemperatureDashboard> {
       setState(() {
         selectedDate = picked;
       });
-      await fetchTemperatureHistory();
+      await fetchTemperatureHistory(selectedDate);
     }
   }
 
@@ -152,7 +168,7 @@ class _TemperatureDashboardState extends State<TemperatureDashboard> {
               ),
               SizedBox(height: 20),
               buildTemperatureHistoryCard(
-                context, // BuildContextを最初の引数として追加
+                context,
                 isLoading,
                 selectedDate,
                 temperatureHistory,

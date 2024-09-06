@@ -22,6 +22,10 @@ dependencies:
   # 国際化とローカリゼーション用パッケージを追加
   intl: ^0.18.0
 
+  # 通知
+  flutter_acrylic: ^1.0.0+2
+  window_manager: ^0.3.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

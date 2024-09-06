@@ -9,81 +9,105 @@ Widget buildTemperatureHistoryCard(
   DateTime selectedDate,
   List<Map<String, dynamic>> temperatureHistory,
   Function(BuildContext) selectDate,
-  Function fetchTemperatureHistory,
+  Function(DateTime) fetchTemperatureHistory,
 ) {
-  return Card(
-    elevation: 4,
-    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-    child: Padding(
-      padding: EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+  return StatefulBuilder(
+    builder: (BuildContext context, StateSetter setState) {
+      return Card(
+        elevation: 4,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        child: Padding(
+          padding: EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('24時間の推移',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
               Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  IconButton(
-                    icon: Icon(Icons.arrow_back),
-                    onPressed: isLoading
-                        ? null
-                        : () {
-                            selectedDate =
-                                selectedDate.subtract(Duration(days: 1));
-                            fetchTemperatureHistory();
-                          },
-                  ),
-                  TextButton(
-                    child: Text(DateFormat('yyyy/MM/dd').format(selectedDate)),
-                    onPressed: isLoading ? null : () => selectDate(context),
-                  ),
-                  IconButton(
-                    icon: Icon(Icons.arrow_forward),
-                    onPressed: (isLoading ||
-                            selectedDate.day == DateTime.now().day)
-                        ? null
-                        : () {
-                            selectedDate = selectedDate.add(Duration(days: 1));
-                            fetchTemperatureHistory();
-                          },
+                  Text('24時間の推移',
+                      style:
+                          TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                  Row(
+                    children: [
+                      IconButton(
+                        icon: Icon(Icons.arrow_back),
+                        onPressed: isLoading
+                            ? null
+                            : () async {
+                                final newDate =
+                                    selectedDate.subtract(Duration(days: 1));
+                                await fetchTemperatureHistory(newDate);
+                                setState(() {
+                                  selectedDate = newDate;
+                                });
+                              },
+                      ),
+                      TextButton(
+                        child:
+                            Text(DateFormat('yyyy/MM/dd').format(selectedDate)),
+                        onPressed: isLoading
+                            ? null
+                            : () async {
+                                final DateTime? picked =
+                                    await selectDate(context);
+                                if (picked != null && picked != selectedDate) {
+                                  await fetchTemperatureHistory(picked);
+                                  setState(() {
+                                    selectedDate = picked;
+                                  });
+                                }
+                              },
+                      ),
+                      IconButton(
+                        icon: Icon(Icons.arrow_forward),
+                        onPressed: (isLoading ||
+                                selectedDate.day == DateTime.now().day)
+                            ? null
+                            : () async {
+                                final newDate =
+                                    selectedDate.add(Duration(days: 1));
+                                await fetchTemperatureHistory(newDate);
+                                setState(() {
+                                  selectedDate = newDate;
+                                });
+                              },
+                      ),
+                    ],
                   ),
                 ],
               ),
+              SizedBox(height: 10),
+              if (isLoading)
+                Center(
+                  child: Column(
+                    children: [
+                      CircularProgressIndicator(),
+                      SizedBox(height: 10),
+                      Text('データを読み込んでいます...'),
+                    ],
+                  ),
+                )
+              else if (temperatureHistory.isEmpty)
+                Center(child: Text('データがありません'))
+              else
+                Column(
+                  children: [
+                    Container(
+                      height: 300,
+                      child: buildTemperatureChart(temperatureHistory),
+                    ),
+                    SizedBox(height: 20),
+                    Container(
+                      height: 300,
+                      child: buildHumidityChart(temperatureHistory),
+                    ),
+                  ],
+                ),
             ],
           ),
-          SizedBox(height: 10),
-          if (isLoading)
-            Center(
-              child: Column(
-                children: [
-                  CircularProgressIndicator(),
-                  SizedBox(height: 10),
-                  Text('データを読み込んでいます...'),
-                ],
-              ),
-            )
-          else if (temperatureHistory.isEmpty)
-            Center(child: Text('データがありません'))
-          else
-            Column(
-              children: [
-                Container(
-                  height: 300,
-                  child: buildTemperatureChart(temperatureHistory),
-                ),
-                SizedBox(height: 20),
-                Container(
-                  height: 300,
-                  child: buildHumidityChart(temperatureHistory),
-                ),
-              ],
-            ),
-        ],
-      ),
-    ),
+        ),
+      );
+    },
   );
 }
 
