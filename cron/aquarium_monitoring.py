@@ -4,11 +4,15 @@ import logging
 import os
 import sqlite3
 from datetime import datetime
+import time
+import seeed_dht
+import fcntl
  
 # SENSOR_ID = "28-0267b00a6461"
 ERR_VAL = 85000
 DATABASE = "/var/lib/aquarium_monitoring/aquarium.db"
 LOG_PATH_DIR = "/var/log/aquarium_monitoring"
+MONITARING_LOG = "/var/log/aquarium_monitoring/temp.log"
 
 def get_sensor_id():
     """
@@ -104,6 +108,11 @@ def create_table(conn):
                      (id INTEGER PRIMARY KEY AUTOINCREMENT,
                       temperature REAL NOT NULL,
                       timestamp TEXT NOT NULL)''')
+        c.execute('''CREATE TABLE IF NOT EXISTS environmental_data
+                     (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                      temperature REAL NOT NULL,
+                      humidity REAL NOT NULL,
+                      timestamp TEXT NOT NULL)''')
     except sqlite3.Error as e:
         logger.error(f"テーブル作成エラー: {e}")
 
@@ -114,6 +123,16 @@ def insert_temperature(conn, temperature):
     cur = conn.cursor()
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     cur.execute(sql, (temperature, timestamp))
+    conn.commit()
+    return cur.lastrowid
+
+def insert_environmental_data(conn, temp, humi):
+    """温度・湿度データを挿入する"""
+    sql = ''' INSERT INTO environmental_data(temperature,humidity,timestamp)
+              VALUES(?,?,?) '''
+    cur = conn.cursor()
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    cur.execute(sql, (temp, humi, timestamp))
     conn.commit()
     return cur.lastrowid
 
@@ -148,19 +167,68 @@ def main():
             conn.close()
             sys.exit(1)
         
+        sensor = seeed_dht.DHT("22", 12)
+
+        humi, temp = sensor.read()
+
         temp_val = round(float(temp_val[-1]) / 1000, 1)
         logger.info(f"水温: {temp_val}°C({SENSOR_ID})")
+        logger.info(f"温度: {temp:.2f}°C, 湿度: {humi:.2f}% (type: {sensor.dht_type}, pin: {sensor.pin.pin})")
 
         # データベースに水温を挿入
         inserted_id = insert_temperature(conn, temp_val)
-        logger.debug(f"INSERT DATA : {inserted_id}")
+        logger.debug(f"INSERT temperature : {inserted_id}")
+        inserted_enviroment_id = insert_environmental_data(conn, temp, humi)
+        logger.debug(f"INSERT environmental_data : {inserted_enviroment_id}")
 
+        log_data = f"水温: {temp_val}°C({SENSOR_ID}), 温度: {temp:.2f}°C, 湿度: {humi:.2f}% (type: {sensor.dht_type}, pin: {sensor.pin.pin})"
+        log_latest_data(logger, log_data)
+        logger.debug(f"log_data : {log_data}")
     else:
         logger.error("水温を読み取れませんでした。")
         conn.close()
         sys.exit(1)
 
     conn.close()
+
+def log_latest_data(logger,     data):
+    """
+    指定されたファイルに最新のデータのみを書き込む。
+    既存のデータは上書きされる。
+
+    :param data: 書き込むデータ（文字列）
+    """
+    try:
+        # ファイルを書き込みモードで開く（既存の内容は削除される）
+        with open(MONITARING_LOG, 'w') as file:
+            # ファイルロックを取得
+            fcntl.flock(file, fcntl.LOCK_EX)
+            
+            # CustomFormatter を使用してログメッセージをフォーマット
+            log_record = logging.LogRecord(
+                name="monitoring_logger",
+                level=logging.INFO,
+                pathname="",
+                lineno=0,
+                msg=data,
+                args=(),
+                exc_info=None
+            )
+            formatted_message = CustomFormatter().format(log_record)
+            
+            # フォーマットされたデータを書き込む
+            file.write(formatted_message + '\n')
+            
+            # ファイルの内容をディスクに強制的に書き込む
+            file.flush()
+            os.fsync(file.fileno())
+            
+            # ファイルロックを解放
+            fcntl.flock(file, fcntl.LOCK_UN)
+    except IOError as e:
+        logger.error(f"ファイルの書き込み中にエラーが発生しました: {e}")
+    except Exception as e:
+        logger.error(f"予期せぬエラーが発生しました: {e}")
 
 if __name__ == "__main__":
     main()

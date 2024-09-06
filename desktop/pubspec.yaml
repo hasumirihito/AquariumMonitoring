@@ -1,0 +1,34 @@
+name: aquarium_monitoring
+description: Aquarium Monitoring Flutter application.
+
+# SDK の制約を追加
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+  flutter: ">=3.10.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  
+  # HTTP リクエスト用パッケージ（最新の安定版に更新）
+  http: ^1.1.0
+  
+  # グラフ描画用パッケージ（最新の安定版に更新）
+  fl_chart: ^0.69.0
+
+  # windowサイズ
+  desktop_window: ^0.4.0
+
+  # 国際化とローカリゼーション用パッケージを追加
+  intl: ^0.18.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  
+  # Flutterのlintルール（推奨）
+  flutter_lints: ^2.0.0
+
+# Flutter の設定
+flutter:
+  uses-material-design: true
